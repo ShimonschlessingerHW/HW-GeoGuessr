@@ -1,259 +1,304 @@
-TechSpec.md — Harvard-Westlake GeoGuessr
+TechSpec.md — Harvard-Westlake GeoGuessr (Comprehensive)
+
+⸻
+
+0. System Overview
+
+Harvard-Westlake GeoGuessr consists of two distinct but connected web applications built on a shared backend and database:
+    1.    Game Client — the public-facing site where users play GeoGuessr-style games.
+    2.    Creation / Submission Client — a restricted site used by students to submit new locations, images, and metadata.
+
+Both clients:
+    •    Are built in React for cross-platform compatibility (desktop + mobile)
+    •    Share authentication, data models, and APIs
+    •    Communicate with a Firebase-backed backend
+
+⸻
 
 1. Technology Stack
 
-Frontend (Web Game Client)
-    •    Language: TypeScript / JavaScript
+Frontend (Both Clients)
+    •    Language: TypeScript
     •    Framework: React
-    •    Rendering: HTML5 Canvas + SVG (for map interactions)
-    •    State Management: React Context or Redux
-    •    Mapping: Custom 2D campus map (vector-based, not Google Maps)
-
-Rationale: React provides predictable UI state transitions for a round-based game. Canvas and SVG allow precise click placement on a custom campus map without relying on external map APIs.
-
-⸻
-
-Backend (Game Logic & Data)
-    •    Language: TypeScript or Python
-    •    Framework: Node.js with Express or FastAPI
-    •    Database: PostgreSQL
-    •    ORM: Prisma (Node) or SQLAlchemy (Python)
-    •    File Storage: Cloud object storage (images + videos)
-
-Responsibilities:
-    •    Serve randomized game rounds
-    •    Score guesses
-    •    Store user profiles, images, and metadata
-    •    Manage PvP lobbies and rankings
+    •    Routing: React Router
+    •    State Management: React Context + Reducers
+    •    Rendering:
+    •    HTML5 Canvas (image display, map overlay)
+    •    SVG (campus map layers, markers)
+    •    Deployment Target: Web (PWA-ready)
 
 ⸻
 
-Mobile / Submission Interface
-    •    Platform: Mobile-friendly web app
-    •    Camera Access: HTML5 Media APIs
-    •    GPS: Browser Geolocation API
-    •    Map Selection: Shared campus map component
-
-Note: A native mobile app is out of scope for the initial implementation.
-
-⸻
-
-External Services
-    •    GeoGuessr Pro: Reference only
-    •    Authentication: OAuth or email/password (TBD)
+Backend / Services
+    •    Backend Platform: Firebase
+    •    Authentication: Firebase Authentication
+    •    Database: Firebase Firestore
+    •    File Storage: Firebase Cloud Storage
+    •    Server Logic: Firebase Cloud Functions
 
 ⸻
 
-2. System Architecture
-
-[ Web Client ]
-     |
-     |  REST / WebSocket
-     |
-[ Backend API ]
-     |
-     |  SQL + Object Storage
-     |
-[ Database ] —— [ Media Storage ]
-
-Gameplay Flow
-    1.    Player starts a new game
-    2.    Backend selects 5 locations based on difficulty
-    3.    Client displays image and campus map
-    4.    Player submits a guess
-    5.    Backend calculates score
-    6.    Results are returned and displayed
-    7.    Final score is saved to the user profile
+Firebase Services Used
+    •    Firebase Auth (user identity)
+    •    Firestore (structured game + submission data)
+    •    Cloud Storage (images & videos)
+    •    Cloud Functions (scoring, validation, matchmaking)
 
 ⸻
 
-3. Core Classes & Responsibilities
+2. High-Level Architecture
+
+[ Game Client (React) ] ─┐
+                         ├── Firebase SDK ── Firestore
+[ Creation Client ] ─────┘                     |
+                                               ├── Cloud Storage
+                                               └── Cloud Functions
+
+No traditional REST server is required; both clients interface directly with Firebase via SDKs and callable functions.
+
+⸻
+
+3. Authentication & User Identity
+
+UserIdentityService (Frontend)
+
+Handles login, logout, and session persistence.
+
+Interacts With: Firebase Auth
+
+Variables
+    •    currentUser: User | null
+    •    authState: enum { LOADING, AUTHENTICATED, ANONYMOUS }
+
+Methods
+    •    signInWithEmail()
+    •    signInAnonymously()
+    •    signOut()
+    •    onAuthStateChanged()
+
+⸻
+
+User (Shared Model)
+
+Variables
+    •    uid: string
+    •    displayName: string
+    •    profilePictureURL: string
+    •    rank: number
+    •    stats: UserStats
+    •    roles: enum { PLAYER, CREATOR, ADMIN }
+
+Roles determine access to the Creation Client.
+
+⸻
+
+4. Game Client — Class Structure
+
+GameApp (Root Component)
+    •    Initializes authentication
+    •    Routes between screens
+
+⸻
 
 GameManager
 
-Controls overall game state and round progression.
+Controls the full lifecycle of a game session.
 
 Variables
-    •    currentRound: int
-    •    totalRounds: int
-    •    gameMode: enum
+    •    gameId: string
+    •    mode: GameMode
+    •    rounds: GameRound[]
+    •    currentRoundIndex: number
     •    player: User
-    •    rounds: List<GameRound>
 
 Methods
     •    startGame()
     •    advanceRound()
     •    endGame()
-    •    calculateFinalScore()
 
 ⸻
 
 GameRound
 
-Represents a single guessing round.
-
 Variables
-    •    roundId: UUID
-    •    location: Location
-    •    image: MediaAsset
-    •    timeLimit: int
-    •    playerGuess: Guess | null
+    •    roundId: string
+    •    locationId: string
+    •    media: MediaAsset
+    •    timeLimit: number
+    •    guess: Guess | null
 
 Methods
-    •    submitGuess(Guess)
-    •    revealAnswer()
+    •    submitGuess()
 
 ⸻
 
-Location
+MapInteractionController
 
-Represents the exact photographer position.
-
-Variables
-    •    locationId: UUID
-    •    section: CampusSection
-    •    x: float
-    •    y: float
-    •    floor: int | null
-    •    description: string
-
-⸻
-
-CampusMap
-
-Handles map projection and click-to-coordinate translation.
+Handles all map clicks and coordinate translation.
 
 Variables
-    •    sections: List<CampusSection>
-    •    scaleFactor: float
+    •    selectedFloor: number | null
+    •    currentMarker: Point | null
 
 Methods
-    •    mapClickToCoordinates(x, y)
-    •    calculateDistance(a, b)
-    •    getSectionAtPoint(point)
+    •    handleMapClick(x, y)
+    •    setFloor(floor)
 
 ⸻
 
 Guess
 
-Represents a player’s submitted answer.
-
 Variables
-    •    guessPoint: Point
-    •    floorGuess: int | null
-    •    timeTaken: int
+    •    x: number
+    •    y: number
+    •    floor: number | null
+    •    timeTaken: number
 
 ⸻
 
-ScoringEngine
+ScoringEngine (Cloud Function)
 
-Encapsulates all scoring calculations.
+Runs server-side to prevent cheating.
 
 Methods
-    •    calculatePenalty(Guess, Location)
-    •    calculateScore(Guess, Location, mode)
-    •    applyTimeModifier(score, time)
-
-Penalty Components
-    •    Section penalty
-    •    Floor penalty
-    •    Distance penalty (normalized by building size)
+    •    calculatePenalty(guess, location)
+    •    calculateScore()
 
 ⸻
 
-User
+5. PvP & Multiplayer
 
-Represents a player account.
-
-Variables
-    •    userId: UUID
-    •    username: string
-    •    profilePicture: URL
-    •    rank: int
-    •    stats: UserStats
-
-⸻
-
-PvPMatch
-
-Handles multiplayer game logic.
+PvPMatchManager
 
 Variables
-    •    players: List<User>
-    •    health: Map<User, int>
-    •    currentRound: int
+    •    matchId: string
+    •    players: User[]
+    •    health: Map<User, number>
 
 Methods
-    •    submitGuess(user, Guess)
+    •    submitGuess(user, guess)
     •    applyDamage()
-    •    checkWinCondition()
+    •    checkWin()
+
+Uses Firestore real-time listeners.
 
 ⸻
 
-SubmissionEntry
+6. Creation / Submission Client — Class Structure
 
-Represents a user-submitted location.
+CreationApp (Root)
+    •    Auth-gated (CREATOR role required)
+
+⸻
+
+SubmissionManager
+
+Coordinates the submission workflow.
 
 Variables
-    •    media: MediaAsset
-    •    location: Location
-    •    submittedBy: User
-    •    difficultyRating: float
+    •    draftSubmission: SubmissionDraft
+
+Methods
+    •    startSubmission()
+    •    submit()
 
 ⸻
 
-4. Data Model Overview
+SubmissionDraft
 
-User ──< Game >──< GameRound >── Location
-  |                     |
-  |                     └── Guess
-  |
-  └── SubmissionEntry ── MediaAsset
-
-Notes
-    •    Locations are reusable across games
-    •    Difficulty ratings update dynamically
-    •    Media assets are stored separately from relational data
+Variables
+    •    photoFile: File
+    •    videoFile: File
+    •    locationPoint: Point
+    •    floor: number | null
+    •    description: string
 
 ⸻
 
-5. Difficulty & Image Classification
-    •    Each image tracks:
+MediaUploadService
+
+Interacts With: Firebase Cloud Storage
+
+Methods
+    •    uploadImage(file)
+    •    uploadVideo(file)
+
+⸻
+
+LocationValidationService (Cloud Function)
+
+Responsibilities
+    •    Ensure submissions are within campus bounds
+    •    Normalize coordinates
+    •    Reject malformed data
+
+⸻
+
+7. Shared Data Models (Firestore)
+
+LocationDocument
+    •    locationId
+    •    x
+    •    y
+    •    floor
+    •    section
+    •    description
+
+⸻
+
+MediaAssetDocument
+    •    mediaId
+    •    imageURL
+    •    videoURL
+    •    difficultyRating
+
+⸻
+
+GameDocument
+    •    gameId
+    •    playerId
+    •    roundIds[]
+    •    finalScore
+
+⸻
+
+8. Difficulty Classification System
+
+DifficultyAnalyzer (Cloud Function)
+
+Inputs
+    •    Historical guess accuracy
     •    Average distance error
-    •    Correct floor percentage
-    •    Difficulty tiers are assigned dynamically:
-    •    Easy: frequently guessed correctly
-    •    Hard: consistently inaccurate guesses
 
-This system improves image categorization automatically over time.
+Outputs
+    •    Updated difficulty rating
 
 ⸻
 
-6. Out of Scope (Initial Version)
-    •    Native iOS / Android apps
-    •    Street View-style navigation
-    •    AI-generated images
-    •    Full campus movement simulation
-    •    Advanced moderation tools
+9. Out of Scope (Initial Release)
+    •    Native mobile apps
+    •    Automatic moderation via ML
+    •    Real-time campus navigation
 
 ⸻
 
-7. Development Priorities
-    1.    Campus map and coordinate system
-    2.    Location submission workflow
-    3.    Single-player game loop
-    4.    Scoring engine
-    5.    User profiles
-    6.    Difficulty algorithm
-    7.    PvP mode
-    8.    Ranking system
+10. Development Order
+    1.    Firebase Auth + roles
+    2.    Campus map system
+    3.    Submission pipeline
+    4.    Single-player gameplay
+    5.    Scoring engine
+    6.    Difficulty analysis
+    7.    PvP modes
 
 ⸻
 
-8. Required Figma Class Diagram
+11. Required Figma Diagram
 
-The Figma diagram must include:
-    •    All classes defined above
-    •    Clear dependency arrows
-    •    One-to-many and many-to-many relationships
-    •    Separation between frontend, backend, and shared data models
+Must include:
+    •    Frontend classes
+    •    Cloud Functions
+    •    Firebase services
+    •    Data relationships
+
+This document defines the full technical implementation plan for Harvard-Westlake GeoGuessr.
