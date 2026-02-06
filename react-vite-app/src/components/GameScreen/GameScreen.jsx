@@ -11,7 +11,9 @@ function GameScreen({
   onMapClick,
   onFloorSelect,
   onSubmitGuess,
-  onBackToTitle
+  onBackToTitle,
+  currentRound = 1,
+  totalRounds = 5
 }) {
   const canSubmit = guessLocation !== null && guessFloor !== null;
 
@@ -30,6 +32,9 @@ function GameScreen({
             <span>Back</span>
           </button>
           <h2 className="panel-title">Make Your Guess</h2>
+          <div className="round-badge">
+            {currentRound} / {totalRounds}
+          </div>
         </div>
 
         <div className="guess-controls">

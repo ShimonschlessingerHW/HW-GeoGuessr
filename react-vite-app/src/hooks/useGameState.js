@@ -1,13 +1,38 @@
 import { useState, useCallback } from 'react';
 import { getRandomImage } from '../services/imageService';
 
+const TOTAL_ROUNDS = 5;
+const MAX_SCORE_PER_ROUND = 5500; // 5000 for location + 500 floor bonus
+
+/**
+ * Calculate distance between two points (in percentage coordinates)
+ */
+function calculateDistance(guess, actual) {
+  const dx = guess.x - actual.x;
+  const dy = guess.y - actual.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Calculate location score based on distance (0-5000 points)
+ */
+function calculateLocationScore(distance) {
+  const maxScore = 5000;
+  const decayRate = 0.05;
+  const score = Math.round(maxScore * Math.exp(-decayRate * distance));
+  return Math.max(0, Math.min(maxScore, score));
+}
+
 /**
  * Custom hook for managing game state
- * Handles screen transitions, image loading, and guess tracking
+ * Handles screen transitions, image loading, multi-round tracking, and scoring
  */
 export function useGameState() {
-  // Current screen: 'title' or 'game'
+  // Current screen: 'title', 'game', 'result', or 'finalResults'
   const [screen, setScreen] = useState('title');
+
+  // Current round number (1-5)
+  const [currentRound, setCurrentRound] = useState(1);
 
   // Current image being shown
   const [currentImage, setCurrentImage] = useState(null);
@@ -18,6 +43,12 @@ export function useGameState() {
   // User's guess for the floor
   const [guessFloor, setGuessFloor] = useState(null);
 
+  // Results for the current round (shown on result screen)
+  const [currentResult, setCurrentResult] = useState(null);
+
+  // All round results (for final summary)
+  const [roundResults, setRoundResults] = useState([]);
+
   // Loading state
   const [isLoading, setIsLoading] = useState(false);
 
@@ -25,9 +56,33 @@ export function useGameState() {
   const [error, setError] = useState(null);
 
   /**
-   * Start a new game - fetch a random image and show game screen
+   * Load a new image for the current round
+   */
+  const loadNewImage = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const image = await getRandomImage();
+      setCurrentImage(image);
+      setGuessLocation(null);
+      setGuessFloor(null);
+    } catch (err) {
+      console.error('Failed to load image:', err);
+      setError('Failed to load image. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Start a new game - reset everything and fetch first image
    */
   const startGame = useCallback(async () => {
+    setCurrentRound(1);
+    setRoundResults([]);
+    setCurrentResult(null);
+
     setIsLoading(true);
     setError(null);
 
@@ -60,50 +115,97 @@ export function useGameState() {
   }, []);
 
   /**
-   * Submit the guess
+   * Submit the guess and calculate score
    */
   const submitGuess = useCallback(() => {
-    if (!guessLocation || !guessFloor) {
-      console.warn('Cannot submit: missing location or floor');
+    if (!guessLocation || !guessFloor || !currentImage) {
+      console.warn('Cannot submit: missing location, floor, or image');
       return;
     }
 
-    // Log the guess for now (scoring will be implemented later)
-    console.log('Guess submitted:', {
-      location: guessLocation,
-      floor: guessFloor,
-      image: currentImage
-    });
+    // Get correct location and floor from the image data
+    const actualLocation = currentImage.correctLocation || { x: 50, y: 50 };
+    const actualFloor = currentImage.correctFloor || 1;
 
-    // Show an alert with the guess (placeholder for result screen)
-    alert(
-      `Guess submitted!\n\n` +
-      `Location: (${guessLocation.x.toFixed(1)}%, ${guessLocation.y.toFixed(1)}%)\n` +
-      `Floor: ${guessFloor}\n\n` +
-      `(Result screen coming soon!)`
-    );
+    // Calculate scores
+    const distance = calculateDistance(guessLocation, actualLocation);
+    const locationScore = calculateLocationScore(distance);
+    const floorCorrect = guessFloor === actualFloor;
+    // Multiply by 0.8 for incorrect floor instead of bonus system
+    const totalScore = floorCorrect ? locationScore : Math.round(locationScore * 0.8);
 
-    // For now, go back to title screen after guess
-    resetGame();
-  }, [guessLocation, guessFloor, currentImage]);
+    // Create result object
+    const result = {
+      roundNumber: currentRound,
+      imageUrl: currentImage.url,
+      guessLocation,
+      actualLocation,
+      guessFloor,
+      actualFloor,
+      distance,
+      locationScore,
+      floorCorrect,
+      score: totalScore
+    };
+
+    // Save result
+    setCurrentResult(result);
+    setRoundResults(prev => [...prev, result]);
+
+    // Show result screen
+    setScreen('result');
+  }, [guessLocation, guessFloor, currentImage, currentRound]);
+
+  /**
+   * Proceed to the next round
+   */
+  const nextRound = useCallback(async () => {
+    if (currentRound >= TOTAL_ROUNDS) {
+      // Show final results
+      setScreen('finalResults');
+      return;
+    }
+
+    // Increment round
+    setCurrentRound(prev => prev + 1);
+    setCurrentResult(null);
+
+    // Load new image
+    await loadNewImage();
+    setScreen('game');
+  }, [currentRound, loadNewImage]);
+
+  /**
+   * View final results (called from last round's result screen)
+   */
+  const viewFinalResults = useCallback(() => {
+    setScreen('finalResults');
+  }, []);
 
   /**
    * Reset game and return to title screen
    */
   const resetGame = useCallback(() => {
     setScreen('title');
+    setCurrentRound(1);
     setCurrentImage(null);
     setGuessLocation(null);
     setGuessFloor(null);
+    setCurrentResult(null);
+    setRoundResults([]);
     setError(null);
   }, []);
 
   return {
     // State
     screen,
+    currentRound,
+    totalRounds: TOTAL_ROUNDS,
     currentImage,
     guessLocation,
     guessFloor,
+    currentResult,
+    roundResults,
     isLoading,
     error,
 
@@ -112,6 +214,8 @@ export function useGameState() {
     placeMarker,
     selectFloor,
     submitGuess,
+    nextRound,
+    viewFinalResults,
     resetGame
   };
 }
