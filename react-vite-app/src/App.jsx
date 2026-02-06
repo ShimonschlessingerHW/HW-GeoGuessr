@@ -1,20 +1,28 @@
 import { useGameState } from './hooks/useGameState';
 import TitleScreen from './components/TitleScreen/TitleScreen';
 import GameScreen from './components/GameScreen/GameScreen';
+import ResultScreen from './components/ResultScreen/ResultScreen';
+import FinalResultsScreen from './components/FinalResultsScreen/FinalResultsScreen';
 import './App.css';
 
 function App() {
   const {
     screen,
+    currentRound,
+    totalRounds,
     currentImage,
     guessLocation,
     guessFloor,
+    currentResult,
+    roundResults,
     isLoading,
     error,
     startGame,
     placeMarker,
     selectFloor,
     submitGuess,
+    nextRound,
+    viewFinalResults,
     resetGame
   } = useGameState();
 
@@ -49,6 +57,31 @@ function App() {
           onMapClick={placeMarker}
           onFloorSelect={selectFloor}
           onSubmitGuess={submitGuess}
+          onBackToTitle={resetGame}
+          currentRound={currentRound}
+          totalRounds={totalRounds}
+        />
+      )}
+
+      {screen === 'result' && currentResult && (
+        <ResultScreen
+          guessLocation={currentResult.guessLocation}
+          guessFloor={currentResult.guessFloor}
+          actualLocation={currentResult.actualLocation}
+          actualFloor={currentResult.actualFloor}
+          imageUrl={currentResult.imageUrl}
+          roundNumber={currentRound}
+          totalRounds={totalRounds}
+          onNextRound={nextRound}
+          onViewFinalResults={viewFinalResults}
+          isLastRound={currentRound >= totalRounds}
+        />
+      )}
+
+      {screen === 'finalResults' && (
+        <FinalResultsScreen
+          rounds={roundResults}
+          onPlayAgain={startGame}
           onBackToTitle={resetGame}
         />
       )}
